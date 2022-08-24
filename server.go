@@ -48,7 +48,7 @@ func main() {
 	// Run the sockets hub
 	go sockets.RunHub()
 
-	// Send messages to the subscribers - two different channels
+	// Broadcast messages to subscribers in channels room1 and room2
 	go sockets.SendMessages("room1")
 	go sockets.SendMessages("room2")
 

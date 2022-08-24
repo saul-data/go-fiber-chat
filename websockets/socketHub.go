@@ -9,7 +9,6 @@ import (
 
 type client struct{} // Add more data to this type if needed
 
-var clients = make(map[*websocket.Conn]client) // Note: although large maps with pointer-like types (e.g. strings) as keys are slow, using pointers themselves as keys is acceptable and fast
 var Register = make(chan Subscription)
 var Broadcast = make(chan Message)
 var Unregister = make(chan Subscription)
@@ -26,23 +25,28 @@ type Subscription struct {
 
 func RunHub() {
 
+	// Rooms with list of clients
 	RoomswithClients := cmap.New()
 
 	for {
 		select {
 		case connection := <-Register:
-			clients[connection.Conn] = client{}
 
-			var clientsperRoom = []*websocket.Conn{}
+			var clients = make(map[*websocket.Conn]client) // Note: although large maps with pointer-like types (e.g. strings) as keys are slow, using pointers themselves as keys is acceptable and fast
 
 			// Retrieve list of clients in the room.
 			if tmp, ok := RoomswithClients.Get(connection.Room); ok {
-				clientsperRoom = tmp.([]*websocket.Conn)
-				clientsperRoom = append(clientsperRoom, connection.Conn)
-				RoomswithClients.Set(connection.Room, clientsperRoom)
+
+				// Existing room add connection
+				clients = tmp.(map[*websocket.Conn]client)
+				clients[connection.Conn] = client{}
+
+				RoomswithClients.Set(connection.Room, clients)
 			} else {
-				clientsperRoom = append(clientsperRoom, connection.Conn)
-				RoomswithClients.Set(connection.Room, clientsperRoom)
+
+				// New room add connection
+				clients[connection.Conn] = client{}
+				RoomswithClients.Set(connection.Room, clients)
 			}
 
 			// Show clients belonging to which room
@@ -51,36 +55,47 @@ func RunHub() {
 			// if tmp, ok := RoomswithClients.Get(connection.Room); ok {
 			// 	clientsperRoom = tmp.([]*websocket.Conn)
 			// }
-			for i, rooms := range RoomswithClients {
-				log.Println("Reg: ", i, rooms)
-			}
+			// for i, rooms := range RoomswithClients {
+			// 	log.Println("Reg: ", i, rooms)
+			// }
 
 		case message := <-Broadcast:
 
 			// log.Println("message received:", string(message.Data), message.Room)
+			var clients = make(map[*websocket.Conn]client)
 
-			var clientsperRoom = []*websocket.Conn{}
-
-			// Send the message to all clients
+			// Send the message to all clients in the room provided
 			if tmp, ok := RoomswithClients.Get(message.Room); ok {
-				clientsperRoom = tmp.([]*websocket.Conn)
-			}
+				clients = tmp.(map[*websocket.Conn]client)
 
-			for _, connection := range clientsperRoom {
+				for _, connection := range clients {
+					log.Println("Connections:", connection)
+				}
 
-				// If an error occurs close the client
-				if err := connection.WriteMessage(websocket.TextMessage, []byte(message.Data)); err != nil {
-					log.Println("write error:", err)
+				for connection := range clients {
 
-					connection.WriteMessage(websocket.CloseMessage, []byte{})
-					connection.Close()
-					delete(clients, connection)
+					// If an error occurs close the client
+
+					if err := connection.WriteMessage(websocket.TextMessage, []byte(message.Data)); err != nil {
+						log.Println("write error:", err)
+
+						connection.WriteMessage(websocket.CloseMessage, []byte{})
+						connection.Close()
+						delete(clients, connection)
+						RoomswithClients.Set(message.Room, clients)
+					}
 				}
 			}
 
 		case connection := <-Unregister:
 			// Remove the client from the hub
-			delete(clients, connection.Conn)
+
+			if tmp, ok := RoomswithClients.Get(connection.Room); ok {
+				var clients = make(map[*websocket.Conn]client)
+				clients = tmp.(map[*websocket.Conn]client)
+				delete(clients, connection.Conn)
+				RoomswithClients.Set(connection.Room, clients)
+			}
 
 			log.Println("connection unregistered")
 		}
