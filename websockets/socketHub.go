@@ -2,6 +2,7 @@ package sockets
 
 import (
 	"log"
+	"time"
 
 	"github.com/gofiber/websocket/v2"
 	cmap "github.com/orcaman/concurrent-map"
@@ -21,6 +22,29 @@ type Message struct {
 type Subscription struct {
 	Conn *websocket.Conn
 	Room string
+}
+
+func secureTimeoutq(room string, connection *websocket.Conn, RoomswithClients cmap.ConcurrentMap) {
+	time.Sleep(5 * time.Second)
+
+	if tmp, ok := RoomswithClients.Get(room); ok {
+
+		var clientsqconn = make(map[*websocket.Conn]client)
+
+		clientsqconn = tmp.(map[*websocket.Conn]client)
+
+		if _, ok := clientsqconn[connection]; ok {
+			Unregister <- Subscription{Conn: connection, Room: room}
+			cm := websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "reconnect")
+			if err := connection.WriteMessage(websocket.CloseMessage, cm); err != nil {
+				// handle error
+				log.Println("Error with write", err)
+			}
+
+			log.Println("connection unregistered by SecureTimeout")
+
+		}
+	}
 }
 
 func RunHub() {
@@ -48,6 +72,8 @@ func RunHub() {
 				clients[connection.Conn] = client{}
 				RoomswithClients.Set(connection.Room, clients)
 			}
+
+			go secureTimeoutq(connection.Room, connection.Conn, RoomswithClients)
 
 			// Show clients belonging to which room
 			log.Println("connections registered:")

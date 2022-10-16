@@ -4,6 +4,7 @@
 Chat channels in Go Fiber
 
 # Testing urls
+To test with Hoppscotch go to http://localhost:3030
 ```
 ws://localhost:9000/ws/rooms/room1
 ws://localhost:9000/ws/rooms/room2
